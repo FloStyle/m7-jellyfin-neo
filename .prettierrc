@@ -3,6 +3,5 @@
   "trailingComma": "all",
   "singleQuote": true,
   "printWidth": 100,
-  "arrowParens": "always",
-  "parser": "javascript"
+  "arrowParens": "always"
 }

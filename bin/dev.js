@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 var fs = require('fs');
-const path = require('path')
+const path = require('path');
 const BASE_PATH = path.resolve(process.cwd());
 const BUILD_PATH = `${BASE_PATH}/dist`;
 const { spawn } = require('child_process');

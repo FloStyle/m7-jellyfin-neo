@@ -1,16 +1,10 @@
 #!/usr/bin/env node
-const fs = require('fs')
-const path = require('path')
+const fs = require('fs');
+const path = require('path');
 const BASE_PATH = path.resolve(process.cwd());
 
 const archiver = require('archiver');
-const {
-  movian,
-  version,
-  description,
-  author,
-  main
-} = require(`${BASE_PATH}/package.json`);
+const { movian, version, description, author, main } = require(`${BASE_PATH}/package.json`);
 
 const IGNORE_LIST_FILENAME = '.gitattributes';
 
@@ -26,10 +20,9 @@ let plugin = {
     description,
     version,
     author,
-    file: main
-  }
+    file: main,
+  },
 };
-
 
 (async () => {
   async function readFiles(dirname, onFileContent, onError) {
@@ -67,26 +60,29 @@ let plugin = {
 
   const loadIgnoreFile = () => {
     try {
-      const fileList = fs.readFileSync(CURRENT_PATH + `/${IGNORE_LIST_FILENAME}`).toString().split('\n');
+      const fileList = fs
+        .readFileSync(CURRENT_PATH + `/${IGNORE_LIST_FILENAME}`)
+        .toString()
+        .split('\n');
       // .replace(/^(?=\n)$|^\s*|\s*$|\n\n+/gm, "")
       const result = [];
-      fileList.forEach(f => {
+      fileList.forEach((f) => {
         if (f.indexOf(' export-ignore') > 0) {
           const patterns = f.split(' ');
           result.push(patterns[0].trim());
         }
-      })
+      });
 
       return result;
     } catch (err) {
       return [];
     }
-  }
+  };
 
   const archive = archiver('zip', {
     zlib: {
-      level: 9
-    }
+      level: 9,
+    },
   });
   const outFile = BUILD_PATH + '/' + movian.id + '.zip';
 
@@ -100,7 +96,7 @@ let plugin = {
   ignoreList.push(outFile);
 
   output.on('close', function () {
-    console.log('>', (archive.pointer() / 1000000) + ' megabytes');
+    console.log('>', archive.pointer() / 1000000 + ' megabytes');
   });
 
   output.on('end', function () {
@@ -109,7 +105,7 @@ let plugin = {
   output.on('finish', () => console.timeEnd(`${outFile} zipped in`));
   archive.on('entry', function (entry) {
     console.log('adding', entry.name);
-  })
+  });
 
   archive.on('warning', function (err) {
     if (err.code === 'ENOENT') {
@@ -120,46 +116,50 @@ let plugin = {
   });
 
   archive.on('error', function (err) {
-    throw err
+    throw err;
   });
 
   // Handle translations
   var i18n = {};
-  await readFiles(LOCALE_PATH + '/', function (filename, content) {
-    let iso = path.parse(filename).name;
-    try {
-      i18n[iso] = JSON.parse(content);
-    } catch (e) { console.log(`Malformed ${iso} locale file`) };
-  }, function (err) {
-    throw err;
-  });
+  await readFiles(
+    LOCALE_PATH + '/',
+    function (filename, content) {
+      let iso = path.parse(filename).name;
+      try {
+        i18n[iso] = JSON.parse(content);
+      } catch (e) {
+        console.log(`Malformed ${iso} locale file`);
+      }
+    },
+    function (err) {
+      throw err;
+    },
+  );
   plugin.i18n = i18n;
 
   archive.pipe(output);
   let archivePaths = [
     { path: CURRENT_PATH, prefix: null },
     { path: ASSETS_PATH, prefix: 'assets' },
-    { path: VIEWS_PATH, prefix: 'views' }
+    { path: VIEWS_PATH, prefix: 'views' },
   ];
   try {
-    archive.append(
-      JSON.stringify(plugin, null, 2),
-      {
-        name: 'plugin.json'
-      }
-    );
+    archive.append(JSON.stringify(plugin, null, 2), {
+      name: 'plugin.json',
+    });
 
     archivePaths.forEach((archivePath) => {
-      archive.glob('**/*',
+      archive.glob(
+        '**/*',
         {
           expand: true,
           cwd: archivePath.path,
           ignore: ignoreList,
-          dot: true
+          dot: true,
         },
         {
-          prefix: archivePath.prefix
-        }
+          prefix: archivePath.prefix,
+        },
       );
     });
   } catch (e) {

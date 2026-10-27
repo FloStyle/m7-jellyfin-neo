@@ -26,7 +26,11 @@ class DeviceProfile {
 
     var profile = {
       Name: 'Movian PlayStation 3',
-      Id: Core.deviceId,
+      // Jellyfin 12 validates DeviceProfile.Id as a UUID (OpenAPI: format
+      // uuid) and rejects a 32-hex device id with a 400 validation error.
+      // The value identifies the profile shape, not the device, so a fixed
+      // UUID is correct and keeps the server-side profile cache stable.
+      Id: '7a1c9f34-2b6e-4d58-9c11-4f0e8b6d3a21',
       MaxStaticBitrate: maxBitrate,
       MusicStreamingTranscodingBitrate: 320000,
       TranscodingProfiles: [
@@ -83,7 +87,8 @@ class DeviceProfile {
         { Format: 'dvbsub', Method: 'Encode' },
         { Format: 'dvdsub', Method: 'Encode' },
       ],
-      ResponseProfiles: [],
+      // ResponseProfiles no longer exists in the Jellyfin 12 DeviceProfile
+      // schema (it was already empty here).
     };
 
     // force_transcode: direct play is disabled entirely (§14.4).

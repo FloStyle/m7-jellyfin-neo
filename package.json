@@ -1,8 +1,8 @@
 {
   "name": "movian7-jellyfin",
   "packageManager": "pnpm@9.15.0",
-  "version": "1.5.0",
-  "description": "Modern Jellyfin client for Movian (PlayStation 3) - hardened for Jellyfin 10.9-10.11+, strict PS3 device profile, HLS transcoding.",
+  "version": "1.6.0",
+  "description": "Modern Jellyfin client for Movian (PlayStation 3) - hardened for Jellyfin 10.9-12.x, strict PS3 device profile, HLS transcoding.",
   "keywords": [
     "swc",
     "movian",

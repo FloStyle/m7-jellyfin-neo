@@ -3,6 +3,43 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/), versioning follows [SemVer](https://semver.org/).
 
+## [1.6.0] — 2026-10-27
+
+### Fixed (Jellyfin 12 compatibility — verified against 12.4.0)
+
+- **Login impossible on Jellyfin 12**: `authenticate()` now sends the modern
+  `Authorization` header instead of `X-Emby-Authorization`. The legacy header name is
+  no longer parsed, so the server sees an anonymous request and throws
+  `ArgumentNullException (request.App)` → HTTP 400.
+- **`X-Emby-Token` removed** from `getDefaultHeaders()`: dead on 12.4 (401). The
+  `Authorization` header already carries the token, so nothing else changes.
+- **HLS transcode URL is built locally** (`buildTranscodeUrl()`) instead of forwarding the
+  server's `TranscodingUrl`. On 12.x that URL repeats ~30 parameters on *every* segment
+  URL (811 chars measured) and targets modern clients; the parameter set restored here is
+  the one the pre-refactor build played on real hardware (523 chars/segment).
+- **Token parameter casing**: HLS (`master.m3u8` / `main.m3u8`) now requires `ApiKey`
+  (capital K) — `api_key` answers 401 there. Direct play (`/stream`) and subtitle URLs
+  were switched to `ApiKey` as well (both spellings still work on those endpoints).
+- **DeviceProfile.Id is now a fixed UUID**: Jellyfin 12 validates it as `format: uuid` and
+  rejects the 32-hex device id with a 400 validation error.
+- `ResponseProfiles` dropped from the device profile (removed from the 12.x schema).
+- `getViews()` uses `/UserViews?userId=` — `/Users/{id}/Views` still answers but is absent
+  from the 12.4 OpenAPI (deprecated).
+
+### Verified on Jellyfin 12.4.0
+
+- `POST /Items/{id}/PlaybackInfo` with the shipped profile → 200; server offers a transcode
+  for HEVC/MKV.
+- URL produced by the built plugin → `master.m3u8` 200 → variant 200 → 539 segments
+  (503 chars each) → first segment 200.
+- Direct-play URL → `/stream` 200.
+- `POST /Sessions/Playing` → 204.
+
+### Known limitation
+
+- No PS3 validation yet: the console was offline for this release. The segment URL length
+  (503 chars) matches the pre-refactor build that played, but only a device run confirms it.
+
 ## [1.5.0] — 2026-08-27
 
 ### Fixed (STAB-1 — validated on real PS3, 2026-08-26)

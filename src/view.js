@@ -612,7 +612,7 @@ class View {
       if (stream.Type === 'Subtitle') {
         subtitles.push({
           title: stream.DisplayTitle || stream.Title,
-          url: `${this.api.host}/Videos/${id}/${mediaSource.Id}/Subtitles/${stream.Index}/Stream.${service.subtitle_format || 'srt'}?api_key=${service.access_token}`,
+          url: `${this.api.host}/Videos/${id}/${mediaSource.Id}/Subtitles/${stream.Index}/Stream.${service.subtitle_format || 'srt'}?ApiKey=${service.access_token}`,
           language: stream.Language,
           source: 'Jellyfin',
         });

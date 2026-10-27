@@ -62,7 +62,6 @@ class Api {
     return {
       'Content-Type': 'application/json',
       Authorization: this.getHeaders(true),
-      'X-Emby-Token': service.access_token,
     };
   };
 
@@ -108,7 +107,7 @@ class Api {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Emby-Authorization': this.getHeaders(),
+        Authorization: this.getHeaders(),
       },
       postdata: JSON.stringify({
         Username: service.username,
@@ -130,7 +129,7 @@ class Api {
    * one entry per library folder (Movies, TV Shows, Music, ...).
    */
   getViews = function () {
-    var url = `${this.host}/Users/${encodeURIComponent(this.user.Id)}/Views`;
+    var url = `${this.host}/UserViews?userId=${encodeURIComponent(this.user.Id)}`;
 
     return this.request(url, {
       method: 'GET',
@@ -443,27 +442,64 @@ class Api {
   };
 
   /**
-   * Sanitize a server-provided playback URL before handing it to the PS3
-   * player (AGENTS.md §9 — "PS3 stalls on raw TranscodingUrl"):
+   * Build the HLS transcode URL handed to the PS3 player.
    *
-   * 1. Jellyfin 10.11 TranscodingUrl starts with `?&` (empty first query
-   *    parameter) — the old Movian player rejects the source before any
-   *    fetch. Normalize `?&` to `?`.
-   * 2. Encode raw commas in query values (aac,ac3 -> aac%2Cac3) to match
-   *    the legacy working URL format; unencoded commas are another suspect
-   *    for the old player's URL parser.
+   * The server-provided `TranscodingUrl` is deliberately NOT forwarded:
+   * on Jellyfin 12 its query string is repeated verbatim on every segment
+   * URL (measured: 811 chars / 30 params per segment, against 523 for the
+   * pre-refactor build that played on real hardware), and it carries
+   * parameters aimed at modern clients, not at Movian's old HLS parser.
    *
-   * Already-encoded sequences (%2C, %20, ...) are left untouched.
+   * The parameter set below is byte-for-byte the one the pre-refactor build
+   * used on the console; only the token parameter changed: Jellyfin 12
+   * requires `ApiKey` (capital K) on master/main.m3u8 — `api_key` answers
+   * 401 there while other endpoints still accept it. Values are
+   * percent-encoded (`aac,opus,flac` -> `aac%2Copus%2Cflac`), which is the
+   * shape that parses on the PS3.
+   *
+   * Measured against Jellyfin 12.4.0 (episode, 1080p HEVC):
+   *   master.m3u8 -> 200, 1 variant, variant URL 449 chars
+   *   main.m3u8   -> 200, 539 segments, 522 chars/segment, first segment 200
    */
-  sanitizePlaybackUrl = function (url) {
-    url = url.replace(/\?&/, '?');
-    // Jellyfin 10.11 also inserts empty params mid-query (`&&`) — the old
-    // player's URL parser can trip on them too.
-    url = url.replace(/&&/g, '&');
-    url = url.replace(/(%[0-9A-Fa-f]{2})|,/g, function (m, enc) {
-      return enc || '%2C';
-    });
-    return url;
+  buildTranscodeUrl = function (source, itemId) {
+    var mediaSourceId = source && source.Id ? source.Id : itemId;
+    var bitrate = source && source.Bitrate ? parseInt(source.Bitrate, 10) : NaN;
+    if (isNaN(bitrate) || bitrate <= 0) {
+      // Legacy default of the pre-refactor build when Bitrate is unknown.
+      bitrate = 5616000;
+    }
+
+    var params = {
+      ApiKey: service.access_token,
+      static: 'false',
+      VideoCodec: 'h264',
+      VideoBitrate: bitrate,
+      AudioCodec: 'aac,opus,flac',
+      MediaSourceId: mediaSourceId,
+      RequireAvc: 'false',
+      EnableAudioVbrEncoding: 'false',
+      TranscodingMaxAudioChannels: '2',
+      MinSegments: '1',
+      BreakOnNonKeyFrames: 'true',
+      'hevc-level': '120',
+      'hevc-videobitdepth': '8',
+      'h264-profile': 'high,main,baseline,constrainedbaseline',
+      'h264-rangetype': 'SDR',
+      'h264-level': '52',
+      'h264-deinterlace': 'true',
+      maxWidth: '1920',
+      maxHeight: '1080',
+    };
+
+    var query = [];
+    for (var key in params) {
+      if (Object.prototype.hasOwnProperty.call(params, key)) {
+        query.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+      }
+    }
+
+    // master.m3u8 (single variant) — the path the console played before.
+    return `${this.host}/Videos/${encodeURIComponent(itemId)}/master.m3u8?${query.join('&')}`;
   };
 
   /**
@@ -472,7 +508,8 @@ class Api {
    *
    * Preference order per source:
    *   1. Direct play — only when every stream passes isDirectPlaySafe().
-   *   2. TranscodingUrl — the server-provided transcode (HLS per profile).
+   *   2. Transcode — HLS URL built locally by buildTranscodeUrl(); the
+   *      server's raw TranscodingUrl is never forwarded (see its comment).
    *
    * Returns a structured result and never throws:
    *   { ok: true, method: 'DirectPlay'|'Transcode', mediaSource, url,
@@ -499,7 +536,7 @@ class Api {
         // is only taken for PS3-safe files (§13.5).
         var directUrl =
           `${this.host}/Videos/${encodeURIComponent(itemId)}/stream` +
-          `?MediaSourceId=${encodeURIComponent(source.Id)}&Static=true&api_key=${service.access_token}`;
+          `?MediaSourceId=${encodeURIComponent(source.Id)}&Static=true&ApiKey=${service.access_token}`;
 
         return {
           ok: true,
@@ -510,19 +547,15 @@ class Api {
         };
       }
 
-      var transcodeUrl = source.TranscodingUrl;
-      if (transcodeUrl) {
-        // Relative URLs are resolved against the server host (§13.5).
-        var url = /^https?:\/\//i.test(transcodeUrl) ? transcodeUrl : this.host + transcodeUrl;
-        // Sanitize before handing to the player: `?&` quirk + comma encoding
-        // (AGENTS.md §9).
-        url = this.sanitizePlaybackUrl(url);
-
+      // Not direct-play safe: hand the player an HLS URL we shape ourselves.
+      // `SupportsTranscoding` defaults to true; only a source that explicitly
+      // refuses transcoding is skipped (AGENTS.md §13.4).
+      if (source.SupportsTranscoding !== false) {
         return {
           ok: true,
           method: 'Transcode',
           mediaSource: source,
-          url: url,
+          url: this.buildTranscodeUrl(source, itemId),
           playSessionId: data.PlaySessionId || null,
         };
       }
